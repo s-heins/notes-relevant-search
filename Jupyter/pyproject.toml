@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "jupyter"
+version = "0.1.0"
+description = ""
+authors = ["Sonja Heins <52819981+s-heins@users.noreply.github.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.28.2"
+
+
+[tool.poetry.group.dev.dependencies]
+jupyterlab = "^3.6.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
