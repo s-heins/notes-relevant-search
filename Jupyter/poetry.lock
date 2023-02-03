@@ -556,6 +556,17 @@ files = [
 ]
 
 [[package]]
+name = "importlib"
+version = "1.0.4"
+description = "Backport of importlib.import_module() from Python 2.7"
+category = "dev"
+optional = false
+python-versions = "*"
+files = [
+    {file = "importlib-1.0.4.zip", hash = "sha256:b6ee7066fea66e35f8d0acee24d98006de1a0a8a94a8ce6efe73a9a23c8d9826"},
+]
+
+[[package]]
 name = "ipykernel"
 version = "6.21.1"
 description = "IPython Kernel for Jupyter"
@@ -2067,4 +2078,4 @@ test = ["mypy", "pre-commit", "pytest", "pytest-asyncio", "websockets (>=10.0)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "aebaf627a08ac986508fb179b65b2519d74c30fd8592cbe68a440a5e129057c5"
+content-hash = "ef8907e1f1b0aee5209cd9aec7662e272e61f3c3fb8365911316f242f0df90a7"

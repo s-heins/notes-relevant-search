@@ -40,6 +40,8 @@
         - [ES Analyze API: How does an analyzer tokenize a query text?](#es-analyze-api-how-does-an-analyzer-tokenize-a-query-text)
         - [Comparing your query to the inverted index](#comparing-your-query-to-the-inverted-index)
         - [Specifying an analyzer](#specifying-an-analyzer)
+      - [Debugging ranking](#debugging-ranking)
+        - [Using `"explain": true` for a search query](#using-explain-true-for-a-search-query)
   - [How relevance of a document is determined](#how-relevance-of-a-document-is-determined)
     - [Field Weight: Classic Similarity function](#field-weight-classic-similarity-function)
       - [The final formula](#the-final-formula)
@@ -785,6 +787,129 @@ Num  RelevanceScore   Movie Title
 13    7.5             Speed Racer
 14    7.2             Semi-Pro
 15    7.2             The Flintstones
+```
+
+#### Debugging ranking
+
+To understand ranking, we need to understand these two things:
+
+- how **individual match scores** are calculated
+- how these factor into the **document's overall relevance score**
+
+##### Using `"explain": true` for a search query
+
+We can issue the same search as before with the additional field "explain" set to `true`:
+
+```request
+GET http://localhost:9200/tmdb/_search
+```
+
+```json
+{
+    "query": {
+        "multi_match": {
+            "query": "basketball with cartoon aliens",
+            "fields": ["title^10", "overview"]
+        }
+    },
+    "explain": true,
+}
+```
+
+If we look at the first result's `_explanation` field, we can see how its relevance score is being calculated. The resulting json is quite large, so what follows is shortened with some child nodes having been replaced by `...`.
+
+```json
+{
+  "value": 78.76023,
+  "description": "max of:",
+  "details": [
+    {
+      "value": 78.76023,
+      "description": "sum of:",
+      "details": [
+        {
+          "value": 78.76023,
+          "description": "weight(title:basketbal in 784) [PerFieldSimilarity], result of:",
+          "details": [
+            {
+              "value": 78.76023,
+              "description": "score(freq=1.0), computed as boost * idf * tf from:",
+              "details": [
+                {
+                  "value": 22,
+                  "description": "boost",
+                  "details": []
+                },
+                {
+                  "value": 7.6180873,
+                  "description": "idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:",
+                  "details": [...]
+                },
+                {
+                  "value": 0.4699356,
+                  "description": "tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:",
+                  "details": [...]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Here is a prettier and full version of this (for code see Jupyter notebook):
+
+```txt
+title: The Basketball Diaries
+└──78.76023 (max of:)
+   └──78.76023 (sum of:)
+      └──78.76023 (weight(title:basketbal in 784) [PerFieldSimilarity], result of:)
+         └──78.76023 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──22.0 (boost)
+            └──7.6180873 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               └──1 (n, number of documents containing term)
+               └──3051 (N, total number of documents with field)
+            └──0.4699356 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               └──1.0 (freq, occurrences of term within document)
+               └──1.2 (k1, term saturation parameter)
+               └──0.75 (b, length normalization parameter)
+               └──2.0 (dl, length of field)
+               └──2.1740413 (avgdl, average length of field)
+```
+
+For *Space Jam*, the score calculation can be seen below. We have boosted the title field by ten and so *The Basketball Diaries* gets a big relevance boost since it contains one of the query terms in the title. *Space Jam* only contains `basketbal` (the stemmed form of "basketball") in the overview field, so it gets a smaller boost. There is also apparently only one document with "basketball" in the title, whereas there are eight documents with "basketball" in the overview field.
+
+```txt
+title: Space Jam
+└──12.882349 (max of:)
+   └──12.882349 (sum of:)
+      └──7.8759747 (weight(overview:basketbal in 795) [PerFieldSimilarity], result of:)
+         └──7.8759747 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──2.2 (boost)
+            └──5.8831587 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               └──8 (n, number of documents containing term)
+               └──3050 (N, total number of documents with field)
+            └──0.60851467 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               └──1.0 (freq, occurrences of term within document)
+               └──1.2 (k1, term saturation parameter)
+               └──0.75 (b, length normalization parameter)
+               └──14.0 (dl, length of field)
+               └──36.697704 (avgdl, average length of field)
+      └──5.0063744 (weight(overview:alien in 795) [PerFieldSimilarity], result of:)
+         └──5.0063744 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──2.2 (boost)
+            └──3.739638 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               └──72 (n, number of documents containing term)
+               └──3050 (N, total number of documents with field)
+            └──0.60851467 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               └──1.0 (freq, occurrences of term within document)
+               └──1.2 (k1, term saturation parameter)
+               └──0.75 (b, length normalization parameter)
+               └──14.0 (dl, length of field)
+               └──36.697704 (avgdl, average length of field)
 ```
 
 ## How relevance of a document is determined
