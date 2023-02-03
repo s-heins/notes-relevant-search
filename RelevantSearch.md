@@ -36,7 +36,10 @@
     - [Querying ES and debugging](#querying-es-and-debugging)
       - [Example Query: "Basketball with cartoon aliens"](#example-query-basketball-with-cartoon-aliens)
       - [Debugging a query](#debugging-a-query)
+        - [ES Validate API: Examining the underlying query strategy](#es-validate-api-examining-the-underlying-query-strategy)
         - [ES Analyze API: How does an analyzer tokenize a query text?](#es-analyze-api-how-does-an-analyzer-tokenize-a-query-text)
+        - [Comparing your query to the inverted index](#comparing-your-query-to-the-inverted-index)
+        - [Specifying an analyzer](#specifying-an-analyzer)
   - [How relevance of a document is determined](#how-relevance-of-a-document-is-determined)
     - [Field Weight: Classic Similarity function](#field-weight-classic-similarity-function)
       - [The final formula](#the-final-formula)
@@ -485,35 +488,104 @@ GET http://localhost:9200/tmdb/_search
             "query": "basketball with cartoon aliens",
             "fields": ["title^10", "overview"]
         }
-    },
-    "explain": true
+    }
 }
 ```
 
-Top results from response (parsed from response JSON with python)
+Top results from response (parsed from response JSON with python) – *Space Jam* is not contained in top 15 results.
 
-```
-Num RelevanceScore Movie Title
-1 85.57  Aliens
-2 73.71  The Basketball Diaries
-3 71.32  Cowboys & Aliens
-4 61.14  Monsters vs Aliens
-5 53.5  Aliens vs Predator: Requiem
-6 53.5  Aliens in the Attic
-7 45.22  Dances with Wolves
-8 45.22  Friends with Benefits
-9 45.22  Fire with Fire
-10 45.22  Friends with Kids
+```txt
+Num     RelevanceScore     Movie Title
+1       85.6               Aliens
+2       73.7               The Basketball Diaries
+3       71.3               Cowboys & Aliens
+4       61.1               Monsters vs Aliens
+5       53.5               Aliens vs Predator: Requiem
+6       53.5               Aliens in the Attic
+7       45.2               Dances with Wolves
+8       45.2               Friends with Benefits
+9       45.2               Fire with Fire
+10      45.2               Friends with Kids
+11      39.6               Interview with the Vampire
+12      39.6               From Russia With Love
+13      39.6               Gone with the Wind
+14      39.6               Just Go With It
+15      39.6               My Week with Marilyn
 ```
 
 #### Debugging a query
 
+The matching behavior consists of two parts:
+
+- **Query parsing** – how the Query DSL query translates into a matching strategy of specific terms to fields\
+  Understand how the Query DSL uses Lucene's data structures to answer your search query against different fields.
+- **Analysis** – The process of *creating tokens* from 1) the query or 2) the document text\
+  Try out different analysis components so that documents that should match also do match
+
+##### ES Validate API: Examining the underlying query strategy
+
+Here, we're asking ES to explain to us how our query was parsed so that we can make sure that we formulated the query correctly. We are sending the same query to this endpoint as we previously did to the `_search` endpoint.
+
+```request
+GET http://localhost:9200/tmdb/_validate/query?explain
+```
+
+```json
+{
+    "query": {
+        "multi_match": {
+            "query": "basketball with cartoon aliens",
+            "fields": ["title^10", "overview"]
+        }
+    }
+}
+```
+
+Response:
+
+```json
+{
+  "_shards": {
+    "total": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "valid": true,
+  "explanations": [
+    {
+      "index": "tmdb",
+      "valid": true,
+      "explanation": "((title:basketball title:with title:cartoon title:aliens)^10.0 | (overview:basketball overview:with overview:cartoon overview:aliens))"
+    }
+  ]
+}
+```
+
+The notation in the `explanation` field in the repsonse follows this format:
+
+- `<fieldname>:<query>`, so `title:with` means that Lucene was looking for the word "with" in the `title` field. This already points us to the first problem – words not carrying any meaning such as "with" should be excluded from the query
+- The `^10` signifies that the title fields should be boosted by a factor of 10
+- The `|` operator tells us that Lucene will take the maximum of either score
+
+There are different types of queries, two of them being the most prominent:
+
+- **term query** – simple term is looked up in the inverted index.\
+  Notation: `<fieldname>:<term>`, e.g. `title:with`
+- **phrase query** – terms that should be adjacent are looked up in the invertex index.\
+  Notation: `fieldname>:"<term1> <term2> <...> <term_n>"`, e.g. `title:"space jam"`
+
 ##### ES Analyze API: How does an analyzer tokenize a query text?
+
+Analyzers contain three components as mentioned in Chapter 2:
+
+- character filter
+- tokenizer
+- token filter
 
 Since we did not specify an analyzer to use in our previous query, ES uses the **standard analyzer**. We can look at how this tokenizes a query text by making a call using the ES Analyze API.
 
 ```request
-GET http://localhost:9200/tmdb/tmdb/_analyze
+GET http://localhost:9200/tmdb/_analyze
 ```
 
 ```json
@@ -551,6 +623,168 @@ Response
         }
     ]
 }
+```
+
+After analysis, the token stream is indexed and placed into the inverted index. This is what a "SimpleText" representation of the inverted index looks like for the terms "fire" and "with:
+
+```txt
+field title
+  term fire
+    doc 0
+      freq 2
+      position 1
+      position 3
+    doc 2
+      ...
+  term with
+    doc 0
+      freq 1
+      position 2
+```
+
+##### Comparing your query to the inverted index
+
+We can now compare our parsed query against the inverted index.
+
+- parsed query: `((title:basketball title:with title:cartoon title:aliens)^10.0 | (overview:basketball overview:with overview:cartoon overview:aliens))` (from the `_validate` endpoint)
+- inverted index: see above
+
+Since the movie *"Fire with Fire"* matches the *"with"* part of the query *"basketball with cartoon aliens"*, it is listed as a result.
+
+Any search results that match but should not match are called **spurious results**. We can spot some other spurious results that contain the word "with". We can now specify an analyzer that removes stop words such as "with" to get better results that we can use instead of the standard analyzer.
+
+##### Specifying an analyzer
+
+The analyzer that is used can be specified at many levels:
+
+- for the whole index
+- a node, i.e. a running instance of Elasticsearch
+- a field
+- at query time for a specific query
+
+If we now want to apply a new analyzer to our index, we'll have to **re-index our documents** since we need to alter the structure of the inverted index so that stop words are ignored and not listed.
+
+Now we can delete our old index and create a new one with the following settings which tell ES to use the English analyzer for the title and overview fields.
+
+```txt
+PUT http://localhost:9200/tmdb
+```
+
+```json
+{
+    "settings": {
+        "number_of_shards": 1,
+        "index": {
+            "analysis": {}
+        }
+    },
+    "mappings": {
+        "properties": {
+            "title": {
+                "type": "text",
+                "analyzer": "english"
+            },
+            "overview": {
+                "type": "text",
+                "analyzer": "english"
+            }
+        }
+    }
+}
+```
+
+Finally, we can re-upload the movies contained in tmdb.json to the index (see `reindex` function in python notebook).
+
+When we re-query the `_analyze` endpoint, we get the following tokens:
+
+```request
+GET http://localhost:9200/tmdb/_analyze
+```
+
+```json
+{
+    "field": "title",
+    "text": "Fire with Fire"
+}
+```
+
+The token "with" is now no longer listed. We can see in the gap in positions between the first listing of fire (`0`) and the second listing of fire (`2`) that the word is still contained in the title.
+
+```json
+{
+  "tokens": [
+    {
+      "token": "fire",
+      "start_offset": 0,
+      "end_offset": 4,
+      "type": "<ALPHANUM>",
+      "position": 0
+    },
+    {
+      "token": "fire",
+      "start_offset": 10,
+      "end_offset": 14,
+      "type": "<ALPHANUM>",
+      "position": 2
+    }
+  ]
+}
+```
+
+If we call the `_validate` endpoint again for the query "basketball with cartoon aliens", we can see that the word "with" is now removed from the tokens for title and overview:
+
+```request
+GET http://localhost:9200/tmdb/_validate/query?explain
+```
+
+```json
+{
+    "query": {
+        "multi_match": {
+            "query": "basketball with cartoon aliens",
+            "fields": ["title^10", "overview"]
+        }
+    }
+}
+```
+
+```json
+{
+  "_shards": {
+    "total": 1,
+    "successful": 1,
+    "failed": 0
+  },
+  "valid": true,
+  "explanations": [
+    {
+      "index": "tmdb",
+      "valid": true,
+      "explanation": "((title:basketbal title:cartoon title:alien)^10.0 | (overview:basketbal overview:cartoon overview:alien))"
+    }
+  ]
+}
+```
+
+When we search again, we can see that *Space Jam* is now at position 11 (results parsed with python):
+
+```txt
+Num  RelevanceScore   Movie Title
+1    78.8             The Basketball Diaries
+2    74.1             Alien
+3    74.1             Aliens
+4    74.1             Alien³
+5    59.7             Cowboys & Aliens
+6    59.7             Aliens in the Attic
+7    59.7             Alien: Resurrection
+8    50.0             Monsters vs Aliens
+9    43.0             Aliens vs Predator: Requiem
+10   43.0             AVP: Alien vs. Predator
+11   12.9             Space Jam  <---
+12    7.5             Grown Ups
+13    7.5             Speed Racer
+14    7.2             Semi-Pro
+15    7.2             The Flintstones
 ```
 
 ## How relevance of a document is determined
