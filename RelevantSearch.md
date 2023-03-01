@@ -42,6 +42,9 @@
         - [Specifying an analyzer](#specifying-an-analyzer)
       - [Debugging ranking](#debugging-ranking)
         - [Using `"explain": true` for a search query](#using-explain-true-for-a-search-query)
+    - [The vector-space model, the relevance explain, and you](#the-vector-space-model-the-relevance-explain-and-you)
+    - [Caveats to the vector space model](#caveats-to-the-vector-space-model)
+    - [Scoring matches to measure relevance](#scoring-matches-to-measure-relevance)
   - [How relevance of a document is determined](#how-relevance-of-a-document-is-determined)
     - [Field Weight: Classic Similarity function](#field-weight-classic-similarity-function)
       - [The final formula](#the-final-formula)
@@ -912,22 +915,148 @@ title: Space Jam
                └──36.697704 (avgdl, average length of field)
 ```
 
+### The vector-space model, the relevance explain, and you
+
+To information retrieval, a multi-term search in a field attempts to approximate a *vector comparison* between the query and matched document.
+For documents about fruit, one axis could represent a fruit's juiciness and another the fruit's size, with similar fruits being close to each other in this 2D vector space.
+
+![](img/fruit-vector-space.png)
+
+**Similarity** between two fruits can be computed with the **dot product** of their two vectors.
+
+* multiply the fruits' juiciness values
+* multiply the fruits' size values
+* sum up the results
+
+$$
+\text{dotprod}_{\text{fruit}1, \text{fruit}2} = \text{juiciness}_{\text{fruit}1} \cdot \text{juiciness}_{\text{fruit}1} + \text{size}_{\text{fruit}1} \cdot \text{size}_{\text{fruit}2}
+$$
+
+This is what the vector space would look like for the query for `basketball`, `cartoon`, and `alien`:
+
+![](img/movie-vector-space.png)
+
+In the *bag of words* model of text, vectors have a single dimension for *each possible term*. There could be a dimension for each word in the English language! By far not every word will be contained in a document and a lot of those dimensions are empty or zero. That's why they're known as **sparse vectors**.
+
+As an example, let's define the *weight for a term* as 1 if the term is present, and 0 if not. $V_D$ represents a snippet of text from *Space Jam*'s overview, "basketball game against alien". $V_Q$ represents the our query "basketball with cartoon aliens".
+
+|         | a   | alien | against | …   | basketball | cartoon | …   | game | …   | movie | narnia | …   | zoo |
+| :------ | :-- | :---- | :------ | :-- | :--------- | :------ | :-- | :--- | :-- | :---- | :----- | :-- | :-- |
+| $V_D$   | 0   | 1     | 1       |     | 1          | 0       |     | 1    |     | 0     | 0      |     | 0   |
+| $V_Q$   | 0   | 1     | 0       |     | 1          | 1       |     | 0    |     | 0     | 0      |     | 0   |
+| product | 0   | 1     | 0       |     | 1          | 0       |     | 0    |     | 0     | 0      |     | 0   |
+
+The score would then be calculated as follows:
+
+$$
+\text{score} = V_D[\text{'a'}] \cdot V_Q[\text{'a'}] 
++ V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] 
++ … 
++ V_D[\text{'space'}] \cdot V_Q[\text{'space'}]
++ …
++ V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]
+$$
+
+In the previous explain breakdown, each multiplication factor represents a match score. E.g. `overview:alien` corresponds to $V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}]$. Lucene just has its own way of calculating the weight and does not just use 1 or 0 as we have above. 
+When we look at the previous explain, we can see that the sum of the weights is used as we have for the summation in the preceding dot product.
+
+```
+title: Space Jam
+└──12.882349 (max of:)
+   └──12.882349 (sum of:)
+      └──7.8759747 (weight(overview:basketbal in 795) [PerFieldSimilarity], result of:)
+         └──[...]
+      └──5.0063744 (weight(overview:alien in 795) [PerFieldSimilarity], result of:)
+         └──[...]
+```
+
+### Caveats to the vector space model
+
+- Matches aren't only combined by summation of compound queries
+- So-called *fudge factors* (factors that account for uncertainty or error) have shown to improve scoring when included
+- There are numerous ways to adjust ranking
+  - Using the max of two fields as shown by the `|` operator before
+  - Using a `coord` factor which punishes compound matches if some of their components are missing
+  - Using a sum
+  - Taking a product of the underlying factors
+- Instead of using the "bag of words" model (which ignores context of a term), we could also represent a document as a sparse vector which not only includes all the "bag of words" model words but also every subphrase, such as "basketball game" or "game against". This is possible because Lucene stores *positions* of each term's occurrence. 
+
+Furthermore, the dot product is often normalized by dividing the magnitude of each vector:
+
+$$
+\text{score} = \frac{V_D[\text{'a'}] \cdot V_Q[\text{'a'}] 
++ V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] 
++ … 
++ V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]}{|V_Q| \cdot |V_D|}
+$$
+
+For dot products, normalization converts the score to be between 0 and 1 to re-balance the equation to account for features that tend to have high weights, and those that tend to have smaller weights (the so-called *cosine similarity*). This does **not** apply to search since there are many fudge factors present in Lucene and there are some peculiarities to field statistics. As a result, you should **never** compare scores between queries without a great deal of **customization to make them comparable**.
+
+### Scoring matches to measure relevance
+
+Let's look at Lucene's weight computation for the term "alien" in *Space Jam* again:
+
+```
+[...]
+└──5.0063744 (weight(overview:alien in 795) [PerFieldSimilarity], result of:)
+   └──5.0063744 (score(freq=1.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──3.739638 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+        └──72 (n, number of documents containing term)
+        └──3050 (N, total number of documents with field)
+      └──0.60851467 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+        └──1.0 (freq, occurrences of term within document)
+        └──1.2 (k1, term saturation parameter)
+        └──0.75 (b, length normalization parameter)
+        └──14.0 (dl, length of field)
+        └──36.697704 (avgdl, average length of field)
+```
+
+Let's compare that with the weight for the term "alien" in the overview for *Alien*:
+
+```
+[...]
+└──3.3211904 (weight(overview:alien in 229) [PerFieldSimilarity], result of:)
+   └──3.3211904 (score(freq=1.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──3.739638 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+          └──72 (n, number of documents containing term)
+          └──3050 (N, total number of documents with field)
+       └──0.40368396 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+          └──1.0 (freq, occurrences of term within document)
+          └──1.2 (k1, term saturation parameter)
+          └──0.75 (b, length normalization parameter)
+          └──48.0 (dl, length of field (approximate))
+          └──36.697704 (avgdl, average length of field)
+```
+
+Here, *Alien* is scored lower than *Space Jam* because for "alien" in the overview. Both boosts and IDF values are the same, so the difference can be traced back to the length of field in the TF value. Here, the length of field is higher at 48 for *Alien* than *Space Jam*'s 14:
+
+```text
+'During its return to the earth, commercial spaceship Nostromo intercepts a distress signal from a distant planet. When a three-member team of the crew discovers a chamber containing thousands of eggs on the planet, a creature inside one of the eggs attacks an explorer. The entire crew is unaware of the impending nightmare set to descend upon them when the alien parasite planted inside its unfortunate host is birthed.'
+```
+
+```text
+'Michael Jordan agrees to help the Looney Tunes play a basketball game against alien slavers to determine their freedom.'
+```
+
 ## How relevance of a document is determined
 
 ### Field Weight: Classic Similarity function
 
+Most similarities are based on the formula $TF \cdot IDF$. It weighs rare terms more heavily than common terms by multiplying the term frequency (`TF`) with the inverse document frequency (`IDF` $= \frac{1}{DF}$)
+
 $$
-TF \cdot IDF = TF \cdot \frac{1}{DF} = \frac{TF}{DF}
+\text{similarity} = TF \cdot IDF = TF \cdot \frac{1}{DF} = \frac{TF}{DF}
 $$
 
-*[TF]: Term frequency
-*[IDF]: Inverse Document Frequency
-*[DF]: Document Frequency
+- TF: Term frequency
+- IDF: Inverse Document Frequency
+- DF: Document Frequency
 
-TF : Term frequency,
-IDF: Inverse Document Frequency
+**Conclusion** 
 
-**Conclusion** the relevance of a document regarding a search term will be higher if not many documents in our database match.
+The relevance of a document regarding a search term will be higher if not many documents in our database match.
 
 We can dampen the relevance of each by applying a formula to them:
 
