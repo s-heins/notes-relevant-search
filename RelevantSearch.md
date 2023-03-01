@@ -1,4 +1,4 @@
-- [What is a relevant search result](#what-is-a-relevant-search-result)
+- [Chapter 1: What is a relevant search result](#chapter-1-what-is-a-relevant-search-result)
   - [Terms Chapter 1](#terms-chapter-1)
   - [Different kinds of searches](#different-kinds-of-searches)
   - [Information Retrieval](#information-retrieval)
@@ -7,7 +7,7 @@
     - [New Definition: Feature](#new-definition-feature)
     - [Features vs Signals](#features-vs-signals)
   - [Collaboration](#collaboration)
-- [Search – under the hood](#search--under-the-hood)
+- [Chapter 2: Search - under the hood](#chapter-2-search---under-the-hood)
   - [Terms Chapter 2](#terms-chapter-2)
     - [Example documents](#example-documents)
   - [Introduction to Search](#introduction-to-search)
@@ -33,25 +33,33 @@
       - [Further customization](#further-customization)
     - [Enabling exploration: Filtering, facets, and aggregations](#enabling-exploration-filtering-facets-and-aggregations)
     - [Sorting, ranked results, and relevance](#sorting-ranked-results-and-relevance)
-    - [Querying ES and debugging](#querying-es-and-debugging)
-      - [Example Query: "Basketball with cartoon aliens"](#example-query-basketball-with-cartoon-aliens)
-      - [Debugging a query](#debugging-a-query)
-        - [ES Validate API: Examining the underlying query strategy](#es-validate-api-examining-the-underlying-query-strategy)
-        - [ES Analyze API: How does an analyzer tokenize a query text?](#es-analyze-api-how-does-an-analyzer-tokenize-a-query-text)
-        - [Comparing your query to the inverted index](#comparing-your-query-to-the-inverted-index)
-        - [Specifying an analyzer](#specifying-an-analyzer)
-      - [Debugging ranking](#debugging-ranking)
-        - [Using `"explain": true` for a search query](#using-explain-true-for-a-search-query)
-    - [The vector-space model, the relevance explain, and you](#the-vector-space-model-the-relevance-explain-and-you)
+- [Chapter 3: Debugging your first relevance problem](#chapter-3-debugging-your-first-relevance-problem)
+  - [Example Query: "Basketball with cartoon aliens"](#example-query-basketball-with-cartoon-aliens)
+  - [Debugging a query](#debugging-a-query)
+    - [ES Validate API: Examining the underlying query strategy](#es-validate-api-examining-the-underlying-query-strategy)
+    - [ES Analyze API: How does an analyzer tokenize a query text?](#es-analyze-api-how-does-an-analyzer-tokenize-a-query-text)
+    - [Comparing your query to the inverted index](#comparing-your-query-to-the-inverted-index)
+    - [Specifying an analyzer](#specifying-an-analyzer)
+  - [Debugging ranking](#debugging-ranking)
+    - [Using `"explain": true` for a search query](#using-explain-true-for-a-search-query)
+    - [Examining relevance scores](#examining-relevance-scores)
+  - [The vector-space model, the relevance explain, and you](#the-vector-space-model-the-relevance-explain-and-you)
+    - [Similarity as the dot product between two vectors](#similarity-as-the-dot-product-between-two-vectors)
     - [Caveats to the vector space model](#caveats-to-the-vector-space-model)
-    - [Scoring matches to measure relevance](#scoring-matches-to-measure-relevance)
+  - [Scoring matches to measure relevance](#scoring-matches-to-measure-relevance)
   - [How relevance of a document is determined](#how-relevance-of-a-document-is-determined)
     - [Field Weight: Classic Similarity function](#field-weight-classic-similarity-function)
+      - [Dampened similarity](#dampened-similarity)
+      - [Field norm](#field-norm)
       - [The final formula](#the-final-formula)
+    - [Okapi BM25](#okapi-bm25)
     - [Query weight](#query-weight)
+  - [Fixing our ranking for "Space Jam" vs. "Alien"](#fixing-our-ranking-for-space-jam-vs-alien)
+  - [Solved? Our work is never over](#solved-our-work-is-never-over)
+- [Chapter 4: Taming tokens](#chapter-4-taming-tokens)
   - [Tokenizing](#tokenizing)
 
-# What is a relevant search result
+# Chapter 1: What is a relevant search result
 
 ## Terms Chapter 1
 
@@ -146,7 +154,7 @@ To further improve relevance, the organization can implement these feedback loop
 - using expert feedback
 - creating relevance tests ("Test-driven relevancy practice")
 
-# Search – under the hood
+# Chapter 2: Search - under the hood
 
 ## Terms Chapter 2
 
@@ -478,9 +486,9 @@ Then, term scores within a field are combined. So a document field, e.g., "title
 
 On top of this, **numerical boosts** can be applied to reflect how important each field should be.
 
-### Querying ES and debugging
+# Chapter 3: Debugging your first relevance problem
 
-#### Example Query: "Basketball with cartoon aliens"
+## Example Query: "Basketball with cartoon aliens"
 
 ```request
 GET http://localhost:9200/tmdb/_search
@@ -499,26 +507,25 @@ GET http://localhost:9200/tmdb/_search
 
 Top results from response (parsed from response JSON with python) – *Space Jam* is not contained in top 15 results.
 
-```txt
-Num     RelevanceScore     Movie Title
-1       85.6               Aliens
-2       73.7               The Basketball Diaries
-3       71.3               Cowboys & Aliens
-4       61.1               Monsters vs Aliens
-5       53.5               Aliens vs Predator: Requiem
-6       53.5               Aliens in the Attic
-7       45.2               Dances with Wolves
-8       45.2               Friends with Benefits
-9       45.2               Fire with Fire
-10      45.2               Friends with Kids
-11      39.6               Interview with the Vampire
-12      39.6               From Russia With Love
-13      39.6               Gone with the Wind
-14      39.6               Just Go With It
-15      39.6               My Week with Marilyn
-```
+| Num | Relevance Score | Movie Title                 |
+| :-- | :-------------- | :-------------------------- |
+| 1   | 85.6            | Aliens                      |
+| 2   | 73.7            | The Basketball Diaries      |
+| 3   | 71.3            | Cowboys & Aliens            |
+| 4   | 61.1            | Monsters vs Aliens          |
+| 5   | 53.5            | Aliens vs Predator: Requiem |
+| 6   | 53.5            | Aliens in the Attic         |
+| 7   | 45.2            | Dances with Wolves          |
+| 8   | 45.2            | Friends with Benefits       |
+| 9   | 45.2            | Fire with Fire              |
+| 10  | 45.2            | Friends with Kids           |
+| 11  | 39.6            | Interview with the Vampire  |
+| 12  | 39.6            | From Russia With Love       |
+| 13  | 39.6            | Gone with the Wind          |
+| 14  | 39.6            | Just Go With It             |
+| 15  | 39.6            | My Week with Marilyn        |
 
-#### Debugging a query
+## Debugging a query
 
 The matching behavior consists of two parts:
 
@@ -527,7 +534,7 @@ The matching behavior consists of two parts:
 - **Analysis** – The process of *creating tokens* from 1) the query or 2) the document text\
   Try out different analysis components so that documents that should match also do match
 
-##### ES Validate API: Examining the underlying query strategy
+### ES Validate API: Examining the underlying query strategy
 
 Here, we're asking ES to explain to us how our query was parsed so that we can make sure that we formulated the query correctly. We are sending the same query to this endpoint as we previously did to the `_search` endpoint.
 
@@ -579,7 +586,7 @@ There are different types of queries, two of them being the most prominent:
 - **phrase query** – terms that should be adjacent are looked up in the invertex index.\
   Notation: `fieldname>:"<term1> <term2> <...> <term_n>"`, e.g. `title:"space jam"`
 
-##### ES Analyze API: How does an analyzer tokenize a query text?
+### ES Analyze API: How does an analyzer tokenize a query text?
 
 Analyzers contain three components as mentioned in Chapter 2:
 
@@ -647,7 +654,7 @@ field title
       position 2
 ```
 
-##### Comparing your query to the inverted index
+### Comparing your query to the inverted index
 
 We can now compare our parsed query against the inverted index.
 
@@ -658,7 +665,7 @@ Since the movie *"Fire with Fire"* matches the *"with"* part of the query *"bask
 
 Any search results that match but should not match are called **spurious results**. We can spot some other spurious results that contain the word "with". We can now specify an analyzer that removes stop words such as "with" to get better results that we can use instead of the standard analyzer.
 
-##### Specifying an analyzer
+### Specifying an analyzer
 
 The analyzer that is used can be specified at many levels:
 
@@ -773,33 +780,32 @@ GET http://localhost:9200/tmdb/_validate/query?explain
 
 When we search again, we can see that *Space Jam* is now at position 11 (results parsed with python):
 
-```txt
-Num  RelevanceScore   Movie Title
-1    78.8             The Basketball Diaries
-2    74.1             Alien
-3    74.1             Aliens
-4    74.1             Alien³
-5    59.7             Cowboys & Aliens
-6    59.7             Aliens in the Attic
-7    59.7             Alien: Resurrection
-8    50.0             Monsters vs Aliens
-9    43.0             Aliens vs Predator: Requiem
-10   43.0             AVP: Alien vs. Predator
-11   12.9             Space Jam  <---
-12    7.5             Grown Ups
-13    7.5             Speed Racer
-14    7.2             Semi-Pro
-15    7.2             The Flintstones
-```
+| Num | RelevanceScore | Movie Title                 |
+| :-- | :------------- | :-------------------------- |
+| 1   | 78.8           | The Basketball Diaries      |
+| 2   | 74.1           | Alien                       |
+| 3   | 74.1           | Aliens                      |
+| 4   | 74.1           | Alien³                      |
+| 5   | 59.7           | Cowboys & Aliens            |
+| 6   | 59.7           | Aliens in the Attic         |
+| 7   | 59.7           | Alien: Resurrection         |
+| 8   | 50.0           | Monsters vs Aliens          |
+| 9   | 43.0           | Aliens vs Predator: Requiem |
+| 10  | 43.0           | AVP: Alien vs. Predator     |
+| 11  | 12.9           | **Space Jam** ⭐️          |
+| 12  | 7.5            | Grown Ups                   |
+| 13  | 7.5            | Speed Racer                 |
+| 14  | 7.2            | Semi-Pro                    |
+| 15  | 7.2            | The Flintstones             |
 
-#### Debugging ranking
+## Debugging ranking
 
 To understand ranking, we need to understand these two things:
 
 - how **individual match scores** are calculated
 - how these factor into the **document's overall relevance score**
 
-##### Using `"explain": true` for a search query
+### Using `"explain": true` for a search query
 
 We can issue the same search as before with the additional field "explain" set to `true`:
 
@@ -818,6 +824,8 @@ GET http://localhost:9200/tmdb/_search
     "explain": true,
 }
 ```
+
+### Examining relevance scores
 
 If we look at the first result's `_explanation` field, we can see how its relevance score is being calculated. The resulting json is quite large, so what follows is shortened with some child nodes having been replaced by `...`.
 
@@ -915,12 +923,14 @@ title: Space Jam
                └──36.697704 (avgdl, average length of field)
 ```
 
-### The vector-space model, the relevance explain, and you
+## The vector-space model, the relevance explain, and you
 
 To information retrieval, a multi-term search in a field attempts to approximate a *vector comparison* between the query and matched document.
 For documents about fruit, one axis could represent a fruit's juiciness and another the fruit's size, with similar fruits being close to each other in this 2D vector space.
 
 ![](img/fruit-vector-space.png)
+
+### Similarity as the dot product between two vectors
 
 **Similarity** between two fruits can be computed with the **dot product** of their two vectors.
 
@@ -949,12 +959,7 @@ As an example, let's define the *weight for a term* as 1 if the term is present,
 The score would then be calculated as follows:
 
 $$
-\text{score} = V_D[\text{'a'}] \cdot V_Q[\text{'a'}] 
-+ V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] 
-+ … 
-+ V_D[\text{'space'}] \cdot V_Q[\text{'space'}]
-+ …
-+ V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]
+\text{score} = V_D[\text{'a'}] \cdot V_Q[\text{'a'}] + V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] + … + V_D[\text{'space'}] \cdot V_Q[\text{'space'}] + … + V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]
 $$
 
 In the previous explain breakdown, each multiplication factor represents a match score. E.g. `overview:alien` corresponds to $V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}]$. Lucene just has its own way of calculating the weight and does not just use 1 or 0 as we have above. 
@@ -984,15 +989,12 @@ title: Space Jam
 Furthermore, the dot product is often normalized by dividing the magnitude of each vector:
 
 $$
-\text{score} = \frac{V_D[\text{'a'}] \cdot V_Q[\text{'a'}] 
-+ V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] 
-+ … 
-+ V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]}{|V_Q| \cdot |V_D|}
+\text{score} = \frac{V_D[\text{'a'}] \cdot V_Q[\text{'a'}] + V_D[\text{'alien'}] \cdot V_Q[\text{'alien'}] + … + V_D[\text{'zoo'}] \cdot V_Q[\text{'zoo'}]}{|V_Q| \cdot |V_D|}
 $$
 
 For dot products, normalization converts the score to be between 0 and 1 to re-balance the equation to account for features that tend to have high weights, and those that tend to have smaller weights (the so-called *cosine similarity*). This does **not** apply to search since there are many fudge factors present in Lucene and there are some peculiarities to field statistics. As a result, you should **never** compare scores between queries without a great deal of **customization to make them comparable**.
 
-### Scoring matches to measure relevance
+## Scoring matches to measure relevance
 
 Let's look at Lucene's weight computation for the term "alien" in *Space Jam* again:
 
@@ -1042,25 +1044,51 @@ Here, *Alien* is scored lower than *Space Jam* because for "alien" in the overvi
 
 ## How relevance of a document is determined
 
+Note: The following calculations are different from those in the explain plans above because Lucene has switched its default similarity calculation from classic similarity to its BM25 implementation.
+
 ### Field Weight: Classic Similarity function
 
 Most similarities are based on the formula $TF \cdot IDF$. It weighs rare terms more heavily than common terms by multiplying the term frequency (`TF`) with the inverse document frequency (`IDF` $= \frac{1}{DF}$)
 
 $$
-\text{similarity} = TF \cdot IDF = TF \cdot \frac{1}{DF} = \frac{TF}{DF}
+\text{Similarity} = TF \cdot IDF = TF \cdot \frac{1}{DF} = \frac{TF}{DF}
 $$
 
 - TF: Term frequency
 - IDF: Inverse Document Frequency
 - DF: Document Frequency
 
-**Conclusion** 
+For example, since "love" is a very common term, the relevance for "Sleepless in Seattle" is lower than for the term "lego" in "The Lego Movie" although the `TF` of love within "Sleepless in Seattle" is much higher than that of "lego" in "The Lego Movie":
 
-The relevance of a document regarding a search term will be higher if not many documents in our database match.
+| Movie                  | Matched term | DF  | TF  | TF x IDF       |
+| :--------------------- | :----------- | :-- | :-- | :------------- |
+| *Sleepless in Seattle* | love         | 100 | 10  | 10 / 100 = 0.1 |
+| *The Lego Movie*       | lego         | 1   | 3   | 3 / 1 = 3.0    |
 
-We can dampen the relevance of each by applying a formula to them:
+In cases where higher term frequency does not correspond to high relevance, such as in movie titles, we can disable TF in Elasticsearch.
 
-![img](img/dampened-tf-and-df.png)  
+#### Dampened similarity
+
+More mentions of a term do correlate with relevance, but the relationship isn't linear. That is why Lucene's *classic similarity* dampens the impact of `TF` and `IDF` when computing a weight:
+
+- `TF` weight $= \sqrt{TF}$
+- `IDF` weight $= \log\left(\frac{\text{numDocs}}{\text{DF} + 1}\right) + 1$
+
+![](img/dampened-tf-and-idf.png)
+
+#### Field norm
+
+To get a good feel for how rare a term is, we should consider the term frequency relative to the number of total terms within a matched field. This way, the word "alien" in a 1000 word overview field will have a much lower impact than in a 10 word description. For this, we can use the *field norm* which is defined as
+
+$$
+\text{fieldNorm} = \frac{1}{\sqrt{\text{fieldLength}}}
+$$
+
+If we're looking for the term "alien" in the title field of a movie, the movie "Alien" will have a fieldNorm of 1 since fieldLength is 1.
+
+The `fieldNorm` regulates the impact of `TF` and `IDF` on the term's weight by biasing occurrences in shorter fields.
+
+Norms such as the field norm are calculated at *index time* and take up space. If they also don't correlate to our user's notion of term importance for a term of text, it is better to save that space and disable norms completely.
 
 #### The final formula
 
@@ -1070,27 +1098,154 @@ $$
 \text{Classic Similarity} = TF_{\text{weighted}} \cdot IDF_{\text{weighted}} \cdot \text{fieldNorm}
 $$
 
-If we want to take into account how much text is within a field, and want to give those documents a higher ranking where  the  term occurs within a smaller text, we need tot take into account the field norm. The field norm is defined as
-
-$$
-\text{fieldNorm} = \frac{1}{\sqrt{\text{fieldLength}}}
-$$
-
-If we're looking for the term "alien" in the title field of a movie, the movie "Alien" will have a fieldNorm of 1 since fieldLength is 1.
-
 So relevance is weighted TF divided by weighted DF times the square root of the field length:
 
 $$
 \text{Classic Similarity} = \frac{TF_{\text{weighted}}}{DF_{\text{weighted}} \cdot \sqrt{\text{fieldLength}}}
 $$
 
+### Okapi BM25
+
+You may have noticed that the calculations for `TF` and `IDF` in the explain plan did not match what is described above.
+While classic similarity used to be the default, the new default is now Lucene's implementation of Okapi BM25.
+
+In the explain output above, the calculations are given as follows:
+
+- `TF` weight $= \text{freq} / \left(\text{freq} + k_1 \cdot \left(1 - b + b \cdot \frac{\text{dl}}{\text{avgdl}}\right)\right)$
+  - `freq`: occurrences of term within the document
+  - `k1`: term saturation parameter
+  - `b`: length normalization parameter
+  - `dl`: length of field
+  - `avgdl`: average length of field
+- `IDF` weight $= \log\left(1 + \frac{N - n + 0.5}{n + 0.5}\right)$
+  - `n`: Number of documents containing the term
+  - `N`: Number of documents with the field
+
+What they still have in common is that TF and IDF are dampened to have less than a linear effect.
+
+In the new calculation above, we can see that ES / Lucene has moved on from using the `fieldNorm` to using a measure calculated based on the length of field `dl` and the average length of field `avgdl` together with a length normalization parameter `b`. 
+
+As a result, the impact of `TF` will reach a saturation point where additional occurrences of a term do not further contribute to its relevance. 
+
+Since BM25 optimizes for article-length pieces of text, this may not improve the relevance of your search results.
+
 ### Query weight
 
-$$
-\text{queryNorm} \cdot IDF
-$$
+The query weight takes into account two factors:
 
-What is the queryNorm?
+- query-time boosting
+- query normalization (`queryNorm`)
+
+The `queryNorm` aims to make scores between different matches outside of a single search comparable but does a poor job at this. This is likely the reason that it has in fact been dropped and does not show up in the explain output above.
+
+## Fixing our ranking for "Space Jam" vs. "Alien"
+
+Let's look at the explain plans again.
+
+Alien:
+
+```
+title: Alien
+└──74.090744 (max of:)
+   └──3.3211904 (sum of:)
+      └──3.3211904 (weight(overview:alien in 229) [PerFieldSimilarity], result of:)
+         └──3.3211904 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──2.2 (boost)
+               ...
+            └──3.739638 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               ...
+            └──0.40368396 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               ...
+   └──74.090744 (sum of:)
+      └──74.090744 (weight(title:alien in 229) [PerFieldSimilarity], result of:)
+         └──74.090744 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──22.0 (boost)
+               ...
+            └──5.7722607 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               ...
+            └──0.5834389 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               ...
+```
+
+As we can see, the title has a boost by the factor of ten as we have instructed Lucene in our original query. 
+For "Alien", the `IDF` in the overview field is much lower at 3.7 than for the title field with 5.8. Since the overview is longer, the `TF` weight is also lower at 0.40 than 0.58 in the title field.
+
+Space Jam:
+
+```
+title: Space Jam
+└──12.882349 (max of:)
+   └──12.882349 (sum of:)
+      └──7.8759747 (weight(overview:basketbal in 1357) [PerFieldSimilarity], result of:)
+         └──7.8759747 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──2.2 (boost)
+               ...
+            └──5.8831587 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               ...
+            └──0.60851467 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               ...
+      └──5.0063744 (weight(overview:alien in 1357) [PerFieldSimilarity], result of:)
+         └──5.0063744 (score(freq=1.0), computed as boost * idf * tf from:)
+            └──2.2 (boost)
+               ...
+            └──3.739638 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+               ...
+            └──0.60851467 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+               ...
+```
+
+For "Space Jam", none of the terms occur in the title. Its values of `IDF` and `TF` for the overview field are higher than those of "Alien".
+
+Let's re-run our query by choosing 0.1 as the boosting factor for the title:
+
+```json
+{
+    "query": {
+        "multi_match": {
+            "query": "basketball with cartoon aliens",
+            "fields": ["title^0.1", "overview"]
+        }
+    },
+    "explain": "true",
+    "size": 15
+}
+```
+
+Results:
+
+| Num | RelevanceScore | Movie Title                    |
+| :-- | :------------- | :----------------------------- |
+| 1   | 12.9           | **Space Jam** ⭐️               |
+| 2   | 7.5            | Grown Ups                      |
+| 3   | 7.5            | Speed Racer                    |
+| 4   | 7.2            | Semi-Pro                       |
+| 5   | 7.2            | The Flintstones                |
+| 6   | 6.9            | Coach Carter                   |
+| 7   | 6.8            | White Men Can't Jump           |
+| 8   | 5.8            | Meet Dave                      |
+| 9   | 5.8            | Aliens vs Predator: Requiem    |
+| 10  | 5.4            | Bedazzled                      |
+| 11  | 5.3            | High School Musical            |
+| 12  | 5.3            | The Thing                      |
+| 13  | 5.2            | The Darkest Hour               |
+| 14  | 5.2            | Invasion of the Body Snatchers |
+| 15  | 5.1            | Slither                        |
+
+## Solved? Our work is never over
+
+Currently, the query takes the maximum of the title and overview score. We could think about using a different strategy than using the maximum here. This way, we have either strong title or strong overview matches and nothing in between.
+
+Could we improve our `fieldWeight` calculation (or field length-adjusted `TF` calculation for BM25). Should we bias towards shorter or longer text?
+
+If we look at the overview text again, we can also further dive into this:
+
+```text
+'Michael Jordan agrees to help the Looney Tunes play a basketball game against alien slavers to determine their freedom.'
+```
+
+Should `tunes` or `looney` match "cartoon"? Should we associate the term `Michael Jordan` with basketball?
+
+# Chapter 4: Taming tokens
 
 ## Tokenizing
 
