@@ -56,8 +56,11 @@
     - [Query weight](#query-weight)
   - [Fixing our ranking for "Space Jam" vs. "Alien"](#fixing-our-ranking-for-space-jam-vs-alien)
   - [Solved? Our work is never over](#solved-our-work-is-never-over)
-- [Chapter 4: Taming tokens](#chapter-4-taming-tokens)
-  - [Tokenizing](#tokenizing)
+- [Chapter 4: Taming tokens for text analysis](#chapter-4-taming-tokens-for-text-analysis)
+  - [Tokens as document features](#tokens-as-document-features)
+    - [Feature modeling](#feature-modeling)
+    - [Tokens, more than just words](#tokens-more-than-just-words)
+  - [Controlling precision and recall](#controlling-precision-and-recall)
 
 # Chapter 1: What is a relevant search result
 
@@ -1245,15 +1248,34 @@ If we look at the overview text again, we can also further dive into this:
 
 Should `tunes` or `looney` match "cartoon"? Should we associate the term `Michael Jordan` with basketball?
 
-# Chapter 4: Taming tokens
+# Chapter 4: Taming tokens for text analysis
 
-## Tokenizing
+## Tokens as document features
+
+The tokens extracted from a document are features by which it can be classified.
+If we go back to our fruit example in a previous chapter, fruit can be classified by size, smell, sticker color, and distance from the Washington monument, as well as many other characteristics. Some of these are more important than others, and some features, such as the distance to the Washington Monument, are useless for classification.
+
+In the same way, we have to make sure that our text analysis produces tokens which lead to relevant search results.
+While chapter 2 focused on the mechanics of analysis, we will look at a more "artistic" side to analysis which is called *feature modeling*. 
+
+### Feature modeling
+
+Feature modeling takes into account the user's *intent* as well as the *ideas* conveyed in the documents. It ensures that the tokens produced by the analysis process represent descriptive, meaningful features of both the queries and the documents.
+
+![](img/ch4/tokenization.png)
+
+### Tokens, more than just words
+
+Tokens are created both out of the query and out of the documents.
+They also don't have to correspond to words, they could also be geographic locations, images or a melody for example.
+
+## Controlling precision and recall
 
 - *Precision*: The percentage of documents in the result set that are relevant
 - *Recall*: The percentage of relevant documents that are returned in the result set
 
-![img](img/precision-and-recall.png)
+![img](img/ch4/precision-and-recall.png)
 
-![img](img/precision-and-recall-2.png)  
+![img](img/ch4/precision-and-recall-2.png)  
 
 Usually, we have to sacrifice either of these to improve the other: To improve precision, we're going to have to sacrifice recall. Otherwise, we have to include more features, f.ex. looking for sweet fruits in this example. Then, the tomato would be excluded.
