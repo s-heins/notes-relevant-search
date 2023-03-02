@@ -17,12 +17,12 @@ def mergeDicts(dict1: dict, dict2: dict):
     mergedDict.update(dict2)
     return mergedDict
     
-def getSearchHits(query: str):
+def getSearchHits(indexBaseUrl: str, query: str):
     response = requests.get(indexBaseUrl + "/_search", data=json.dumps(query), headers=headers)
     return json.loads(response.text)['hits']
 
-def getSearchHitsHits(query: str):
-    return getSearchHits(query)['hits']
+def getSearchHitsHits(indexBaseUrl: str, query: str):
+    return getSearchHits(indexBaseUrl, query)['hits']
 
 def parseSearchHits(searchHits: str):
     print("Num\tRelevanceScore\tMovie Title")
@@ -62,6 +62,16 @@ def titleAndExplanation(hit, maxLevel=None):
 
 def printSummary(hit):
     print(json.dumps(titleAndExplanation(hit), indent = 2))
+    
+def getTokenStrings(analyzeResponse):
+    responseJson = json.loads(analyzeResponse.text)
+    tokenArray = responseJson['tokens']
+    return list(map(lambda obj: obj['token'], tokenArray))
+
+def getFieldFromHits(analyzeResponse, fieldName):
+    responseJson = json.loads(analyzeResponse.text)
+    fields = responseJson['hits']['hits']
+    return list(map(lambda obj: obj['_source'][fieldName], fields))
         
 
     

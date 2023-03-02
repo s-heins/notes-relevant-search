@@ -61,6 +61,27 @@
     - [Feature modeling](#feature-modeling)
     - [Tokens, more than just words](#tokens-more-than-just-words)
   - [Controlling precision and recall](#controlling-precision-and-recall)
+    - [Precision and recall with different analyzers](#precision-and-recall-with-different-analyzers)
+    - [High precision with the standard analyzer](#high-precision-with-the-standard-analyzer)
+      - [Creating a clone of the standard analyzer](#creating-a-clone-of-the-standard-analyzer)
+      - [Looking at the resulting tokens for different queries](#looking-at-the-resulting-tokens-for-different-queries)
+    - [Using stemming with the English analyzer to improve recall at the expense of precision](#using-stemming-with-the-english-analyzer-to-improve-recall-at-the-expense-of-precision)
+    - [Too little precision but high recall with the phonetic analyzer](#too-little-precision-but-high-recall-with-the-phonetic-analyzer)
+  - [Precision and recall – have your cake and eat it too](#precision-and-recall-have-your-cake-and-eat-it-too)
+    - [Scoring strength of a feature in a single field](#scoring-strength-of-a-feature-in-a-single-field)
+    - [Scoring beyond $TF \\times IDF$: multiple search terms and multiple fields](#scoring-beyond-tf-times-idf-multiple-search-terms-and-multiple-fields)
+  - [Analysis strategies](#analysis-strategies)
+    - [Delimiters](#delimiters)
+      - [Acronyms](#acronyms)
+      - [Phone numbers](#phone-numbers)
+    - [Capturing meaning with synonyms](#capturing-meaning-with-synonyms)
+      - [Creating our own synonym token filter](#creating-our-own-synonym-token-filter)
+      - [Asymmetric analysis](#asymmetric-analysis)
+    - [Modeling specificity in search](#modeling-specificity-in-search)
+      - [With synonyms](#with-synonyms)
+        - [Semantic expansion](#semantic-expansion)
+        - [Caveats](#caveats)
+      - [With paths](#with-paths)
 
 # Chapter 1: What is a relevant search result
 
@@ -510,23 +531,23 @@ GET http://localhost:9200/tmdb/_search
 
 Top results from response (parsed from response JSON with python) – *Space Jam* is not contained in top 15 results.
 
-| Num | Relevance Score | Movie Title                 |
-| :-- | :-------------- | :-------------------------- |
-| 1   | 85.6            | Aliens                      |
-| 2   | 73.7            | The Basketball Diaries      |
-| 3   | 71.3            | Cowboys & Aliens            |
-| 4   | 61.1            | Monsters vs Aliens          |
-| 5   | 53.5            | Aliens vs Predator: Requiem |
-| 6   | 53.5            | Aliens in the Attic         |
-| 7   | 45.2            | Dances with Wolves          |
-| 8   | 45.2            | Friends with Benefits       |
-| 9   | 45.2            | Fire with Fire              |
-| 10  | 45.2            | Friends with Kids           |
-| 11  | 39.6            | Interview with the Vampire  |
-| 12  | 39.6            | From Russia With Love       |
-| 13  | 39.6            | Gone with the Wind          |
-| 14  | 39.6            | Just Go With It             |
-| 15  | 39.6            | My Week with Marilyn        |
+| Num  | Relevance Score | Movie Title                 |
+| :--- | :-------------- | :-------------------------- |
+| 1    | 85.6            | Aliens                      |
+| 2    | 73.7            | The Basketball Diaries      |
+| 3    | 71.3            | Cowboys & Aliens            |
+| 4    | 61.1            | Monsters vs Aliens          |
+| 5    | 53.5            | Aliens vs Predator: Requiem |
+| 6    | 53.5            | Aliens in the Attic         |
+| 7    | 45.2            | Dances with Wolves          |
+| 8    | 45.2            | Friends with Benefits       |
+| 9    | 45.2            | Fire with Fire              |
+| 10   | 45.2            | Friends with Kids           |
+| 11   | 39.6            | Interview with the Vampire  |
+| 12   | 39.6            | From Russia With Love       |
+| 13   | 39.6            | Gone with the Wind          |
+| 14   | 39.6            | Just Go With It             |
+| 15   | 39.6            | My Week with Marilyn        |
 
 ## Debugging a query
 
@@ -783,23 +804,23 @@ GET http://localhost:9200/tmdb/_validate/query?explain
 
 When we search again, we can see that *Space Jam* is now at position 11 (results parsed with python):
 
-| Num | RelevanceScore | Movie Title                 |
-| :-- | :------------- | :-------------------------- |
-| 1   | 78.8           | The Basketball Diaries      |
-| 2   | 74.1           | Alien                       |
-| 3   | 74.1           | Aliens                      |
-| 4   | 74.1           | Alien³                      |
-| 5   | 59.7           | Cowboys & Aliens            |
-| 6   | 59.7           | Aliens in the Attic         |
-| 7   | 59.7           | Alien: Resurrection         |
-| 8   | 50.0           | Monsters vs Aliens          |
-| 9   | 43.0           | Aliens vs Predator: Requiem |
-| 10  | 43.0           | AVP: Alien vs. Predator     |
-| 11  | 12.9           | **Space Jam** ⭐️          |
-| 12  | 7.5            | Grown Ups                   |
-| 13  | 7.5            | Speed Racer                 |
-| 14  | 7.2            | Semi-Pro                    |
-| 15  | 7.2            | The Flintstones             |
+| Num  | RelevanceScore | Movie Title                 |
+| :--- | :------------- | :-------------------------- |
+| 1    | 78.8           | The Basketball Diaries      |
+| 2    | 74.1           | Alien                       |
+| 3    | 74.1           | Aliens                      |
+| 4    | 74.1           | Alien³                      |
+| 5    | 59.7           | Cowboys & Aliens            |
+| 6    | 59.7           | Aliens in the Attic         |
+| 7    | 59.7           | Alien: Resurrection         |
+| 8    | 50.0           | Monsters vs Aliens          |
+| 9    | 43.0           | Aliens vs Predator: Requiem |
+| 10   | 43.0           | AVP: Alien vs. Predator     |
+| 11   | 12.9           | **Space Jam** ⭐️             |
+| 12   | 7.5            | Grown Ups                   |
+| 13   | 7.5            | Speed Racer                 |
+| 14   | 7.2            | Semi-Pro                    |
+| 15   | 7.2            | The Flintstones             |
 
 ## Debugging ranking
 
@@ -953,11 +974,11 @@ In the *bag of words* model of text, vectors have a single dimension for *each p
 
 As an example, let's define the *weight for a term* as 1 if the term is present, and 0 if not. $V_D$ represents a snippet of text from *Space Jam*'s overview, "basketball game against alien". $V_Q$ represents the our query "basketball with cartoon aliens".
 
-|         | a   | alien | against | …   | basketball | cartoon | …   | game | …   | movie | narnia | …   | zoo |
-| :------ | :-- | :---- | :------ | :-- | :--------- | :------ | :-- | :--- | :-- | :---- | :----- | :-- | :-- |
-| $V_D$   | 0   | 1     | 1       |     | 1          | 0       |     | 1    |     | 0     | 0      |     | 0   |
-| $V_Q$   | 0   | 1     | 0       |     | 1          | 1       |     | 0    |     | 0     | 0      |     | 0   |
-| product | 0   | 1     | 0       |     | 1          | 0       |     | 0    |     | 0     | 0      |     | 0   |
+|         | a    | alien | against | …    | basketball | cartoon | …    | game | …    | movie | narnia | …    | zoo  |
+| :------ | :--- | :---- | :------ | :--- | :--------- | :------ | :--- | :--- | :--- | :---- | :----- | :--- | :--- |
+| $V_D$   | 0    | 1     | 1       |      | 1          | 0       |      | 1    |      | 0     | 0      |      | 0    |
+| $V_Q$   | 0    | 1     | 0       |      | 1          | 1       |      | 0    |      | 0     | 0      |      | 0    |
+| product | 0    | 1     | 0       |      | 1          | 0       |      | 0    |      | 0     | 0      |      | 0    |
 
 The score would then be calculated as follows:
 
@@ -1063,10 +1084,10 @@ $$
 
 For example, since "love" is a very common term, the relevance for "Sleepless in Seattle" is lower than for the term "lego" in "The Lego Movie" although the `TF` of love within "Sleepless in Seattle" is much higher than that of "lego" in "The Lego Movie":
 
-| Movie                  | Matched term | DF  | TF  | TF x IDF       |
-| :--------------------- | :----------- | :-- | :-- | :------------- |
-| *Sleepless in Seattle* | love         | 100 | 10  | 10 / 100 = 0.1 |
-| *The Lego Movie*       | lego         | 1   | 3   | 3 / 1 = 3.0    |
+| Movie                  | Matched term | DF   | TF   | TF x IDF       |
+| :--------------------- | :----------- | :--- | :--- | :------------- |
+| *Sleepless in Seattle* | love         | 100  | 10   | 10 / 100 = 0.1 |
+| *The Lego Movie*       | lego         | 1    | 3    | 3 / 1 = 3.0    |
 
 In cases where higher term frequency does not correspond to high relevance, such as in movie titles, we can disable TF in Elasticsearch.
 
@@ -1216,23 +1237,23 @@ Let's re-run our query by choosing 0.1 as the boosting factor for the title:
 
 Results:
 
-| Num | RelevanceScore | Movie Title                    |
-| :-- | :------------- | :----------------------------- |
-| 1   | 12.9           | **Space Jam** ⭐️               |
-| 2   | 7.5            | Grown Ups                      |
-| 3   | 7.5            | Speed Racer                    |
-| 4   | 7.2            | Semi-Pro                       |
-| 5   | 7.2            | The Flintstones                |
-| 6   | 6.9            | Coach Carter                   |
-| 7   | 6.8            | White Men Can't Jump           |
-| 8   | 5.8            | Meet Dave                      |
-| 9   | 5.8            | Aliens vs Predator: Requiem    |
-| 10  | 5.4            | Bedazzled                      |
-| 11  | 5.3            | High School Musical            |
-| 12  | 5.3            | The Thing                      |
-| 13  | 5.2            | The Darkest Hour               |
-| 14  | 5.2            | Invasion of the Body Snatchers |
-| 15  | 5.1            | Slither                        |
+| Num  | RelevanceScore | Movie Title                    |
+| :--- | :------------- | :----------------------------- |
+| 1    | 12.9           | **Space Jam** ⭐️                |
+| 2    | 7.5            | Grown Ups                      |
+| 3    | 7.5            | Speed Racer                    |
+| 4    | 7.2            | Semi-Pro                       |
+| 5    | 7.2            | The Flintstones                |
+| 6    | 6.9            | Coach Carter                   |
+| 7    | 6.8            | White Men Can't Jump           |
+| 8    | 5.8            | Meet Dave                      |
+| 9    | 5.8            | Aliens vs Predator: Requiem    |
+| 10   | 5.4            | Bedazzled                      |
+| 11   | 5.3            | High School Musical            |
+| 12   | 5.3            | The Thing                      |
+| 13   | 5.2            | The Darkest Hour               |
+| 14   | 5.2            | Invasion of the Body Snatchers |
+| 15   | 5.1            | Slither                        |
 
 ## Solved? Our work is never over
 
@@ -1279,3 +1300,545 @@ They also don't have to correspond to words, they could also be geographic locat
 ![img](img/ch4/precision-and-recall-2.png)  
 
 Usually, we have to sacrifice either of these to improve the other: To improve precision, we're going to have to sacrifice recall. Otherwise, we have to include more features, f.ex. looking for sweet fruits in this example. Then, the tomato would be excluded.
+
+### Precision and recall with different analyzers
+
+The standard analyzer typically produces search results with high precision. However, recall may be poor because a user's query must match the words in the document *exactly*. You can see this in the following example, where "loving" doesn't match with "love".
+
+### High precision with the standard analyzer
+
+Here, we are creating a new index `my-index` with a token filter which will turn all token into lowercase and another which removes all stop words such as "and" or "to". You can also replace Elasticsearch's default stop word list with your own.
+
+#### Creating a clone of the standard analyzer
+
+```request
+PUT http://localhost:9200/my-index
+```
+
+```json
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "standard_clone": {
+          "type": "custom", 
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "stop"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+#### Looking at the resulting tokens for different queries
+
+These are the tokens that are produced when we're using our new standard analyzer clone for the movie title "Dr. Strangelove: Or How I Learned to Stop Worrying and Love the Bomb".
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "standard_clone",
+    "text": "Dr. Strangelove: Or How I Learned to Stop Worrying and Love the Bomb"
+}
+```
+
+Tokens from response parsed with Python (see Jupyter notebook)
+
+```txt
+['dr', 'strangelove', 'how', 'i', 'learned', 'stop', 'worrying', 'love', 'bomb']
+```
+
+If a confused user queries for a similar title which uses different grammatical forms, we can see that there is little overlap in the tokens:
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "standard_clone",
+    "text": "Mr. Weirdlove: Don't worry, I'm learning to start loving bombs"
+}
+```
+
+Tokens from response parsed with Python (see Jupyter notebook)
+
+```txt
+['mr', 'weirdlove', "don't", 'worry', "i'm", 'learning', 'start', 'loving', 'bombs']
+```
+
+Since not a single token matches between the query and the movie title, the search engine will not return what the user was looking for.
+
+### Using stemming with the English analyzer to improve recall at the expense of precision
+
+Note: I didn't try creating this analyzer since dockerized ES returned an "access denied" exception for the `tmp/keywords.txt` file. 
+
+```request
+PUT http://localhost:9200/my-index-2
+```
+
+```json
+{
+    "settings": {
+        "analysis": {
+            "filter": {
+                "english_stop": {
+                    "type": "stop",
+                    "stopwords": "_english_"
+                },
+                "english_keywords": {
+                    "type": "keyword_marker",
+                    "keywords_path": "/tmp/keywords.txt"
+                },
+                "english_stemmer": {
+                    "type": "stemmer",
+                    "language": "english"
+                },
+                "english_possessive_stemmer": {
+                    "type": "stemmer",
+                    "language": "possessive_english"
+                }
+            },
+            "analyzer": {
+                "english_clone": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "english_possessive_stemmer",
+                        "lowercase",
+                        "english_stop",
+                        "english_keywords",
+                        "english_stemmer"
+                    ]
+                }
+            }
+        }
+    }
+}
+```
+
+The included stemmer uses a heuristic to map English words to tokens. That is why it is not necessary for the search terms to really exist in a dictionary:
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "english",
+    "text": "silly silliness sillied sillying"
+}
+```
+
+This produces the token `"silli"` for all four input words.
+
+> Stemming is a technique of *feature modeling* that sacrifices precision for increased recall.
+
+If you do not want a word stemmed, you can add it to the **keywords file**. This way, for example, we can enter `"Maine"` in the keywords file and have it not be stemmed to `"main"`.
+
+Let us compare what tokens the English analyzer produces for the original two queries:
+
+```text
+['dr', 'strangelov', 'how', 'i', 'learn', 'stop', 'worri', 'love', 'bomb']
+```
+
+```text
+['mr', 'weirdlov', "don't", 'worri', "i'm", 'learn', 'start', 'love', 'bomb']
+```
+
+The English analyzer has sacrificed some precision for better recall. We now have four matching tokens: `learn`, `worri`, `love`, `bomb`.
+
+### Too little precision but high recall with the phonetic analyzer
+
+First run bash from our "elasticsearch" container:
+
+```shell
+$ docker exec -it elasticsearch /bin/bash
+```
+
+Inside the container, we can install the `analysis-phonetic` plugin like this:
+
+```shell
+$ bin/elasticsearch-plugin install analysis-phonetic
+```
+
+However, "message from Dalai Lama" and "massage from tall llama" produce the same tokens here:
+
+```text
+'MSJ', 'MSK', 'FRM', 'TL', 'LM'
+```
+
+As such, this is an example of too high recall and too little precision. We should instead try to represent the *meaning* of our words rather than just words themselves.
+
+## Precision and recall – have your cake and eat it too
+
+### Scoring strength of a feature in a single field
+
+Because users only care about the top results, we can use ranking to have the most precise results at the top and still feature less relevant results further down the page – so basically, the best of both worlds.
+
+Let's look at an example with these four documents:
+
+```json
+{"title": "apple apple apple apple apple"}
+{"title": "apple apple apple banana banana"}
+{"title": "apple banana blueberry coconut"}
+{"title": "apple apples"}
+```
+
+For the code which creates the index, uploads the documents and prints out these scores, please have a look at the Jupyter notebook for chapter 4.
+
+Without specifying a default analyzer, the documents will be ranked like this:
+
+| Num  | Score | Title                           |
+| :--- | :---- | :------------------------------ |
+| 1    | 0.18  | apple apple apple apple apple   |
+| 2    | 0.157 | apple apple apple banana banana |
+| 3    | 0.132 | apple apples                    |
+| 4    | 0.105 | apple banana blueberry coconut  |
+
+After re-creating the index with the English analyzer (and re-uploading the documents), the results look like this:
+
+```request
+PUT http://localhost:9200/my-index-2
+```
+
+```json
+{
+  "settings": {
+    "number_of_shards": 1,
+    "analysis": {
+      "analyzer": {
+          "default": {
+              "type": "english"
+          },
+          "default_search": {
+              "type": "english"
+          }
+      }
+    }
+  }
+}
+```
+
+| Num  | Score | Title                           |
+| :--- | :---- | :------------------------------ |
+| 1    | 0.18  | apple apple apple apple apple   |
+| 2    | 0.169 | apple apples                    |
+| 3    | 0.157 | apple apple apple banana banana |
+| 4    | 0.105 | apple banana blueberry coconut  |
+
+This is because the frequency (`freq` in the output below) for "apple" in the document with title "apple apples" is now 2 thanks to the stemming in the English analyzer.
+
+The parsed explain (see Jupyter notebook) for the first two results look like this:
+
+```text
+1
+title: apple apple apple apple apple
+└──0.18038377 (weight(title:appl in 0) [PerFieldSimilarity], result of:)
+   └──0.18038377 (score(freq=5.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──0.105360515 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+         └──4 (n, number of documents containing term)
+         └──4 (N, total number of documents with field)
+      └──0.7782101 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+         └──5.0 (freq, occurrences of term within document)
+         └──1.2 (k1, term saturation parameter)
+         └──0.75 (b, length normalization parameter)
+         └──5.0 (dl, length of field)
+         └──4.0 (avgdl, average length of field)
+
+2
+title: apple apples
+└──0.16857684 (weight(title:appl in 3) [PerFieldSimilarity], result of:)
+   └──0.16857684 (score(freq=2.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──0.105360515 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+         └──4 (n, number of documents containing term)
+         └──4 (N, total number of documents with field)
+      └──0.72727275 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+         └──2.0 (freq, occurrences of term within document)
+         └──1.2 (k1, term saturation parameter)
+         └──0.75 (b, length normalization parameter)
+         └──2.0 (dl, length of field)
+         └──4.0 (avgdl, average length of field)
+```
+
+As a result, we were able to achieve a good tradeoff between recall and precision. A lot of documents are returned and the most relevant ones are sorted to appear first. 
+With analysis, we can improve recall *and* $TF \times IDF$ relevance scoring:
+
+- The documents show up if at least one of the tokens that were generated for them is contained in the tokens generated for the query; This can be controlled with analysis.
+- The ranking for the documents then depends on $TF$ and $IDF$ but as we saw, this can also depend on what tokens are generated. Through stemming for example, two different words in the document can be mapped to one token (as we have seen for `apples` and `apple` being mapped to the token `appl`) and this will increase $TF$, and with it, its relevance score.
+
+### Scoring beyond $TF \times IDF$: multiple search terms and multiple fields
+
+Most searches do not include only one token like the previous example. With the help of the **coordinating factor** `coord` we can increase scores of documents which mention more of the search terms.
+
+For the documents from the previous example, if we were to search for `apple banana`, `coord` punishes documents which only match with `apple` by multiplying their relevance score by 50% since only one out of two terms matches. 
+
+The coordinating factor is **not used in BM25 though**, apparently, as it does not show up in the explains below.
+The IDF calculations for the below documents are all the same, at `0.1054` for apple and `0.6931` for banana.
+The document with `apple apple apple banana banana` has a weight of `0.1571` for `appl` and `0.8904` for `banana` because it has a length of field of 5 and has 3 occurrences for `appl` and 2 for `banana`. All the other factors are the same as for the other documents for the respective terms. Banana is scored higher than apple because its $IDF$ is higher; it is the rarer term.
+
+For the detailed explain statements, please see the Jupyter notebook.
+
+| Num  | Score | Title                           |
+| :--- | :---- | :------------------------------ |
+| 1    | 1.048 | apple apple apple banana banana |
+| 2    | 0.799 | apple banana blueberry coconut  |
+| 3    | 0.18  | apple apple apple apple apple   |
+| 4    | 0.169 | apple apples                    |
+
+When searching over multiple fields, we can define different analyzers for each field, and thus sidestep the precision/recall trade-off in another way.
+It is also possible to use multiple analyzers such as the standard analyzer, the English stemmer, and the phonetic analyzer simultaneously by running all of them on the same text and saving the results in different fields.
+
+## Analysis strategies
+
+### Delimiters
+
+#### Acronyms
+
+To deal with acronyms, we can use the acronym filter in the analysis chain. There are different options to configure how acronyms should be turned into tokens, e.g. `generate_word_parts` which determines whether "I.B.M." should be tokenized as `i`, `b`, and `m` if set to true or `ibm` if it's set to false. 
+Tokenizing acronyms as one word could lead to problems if the acronym also spells a word, such as N.E.W (National Engineering Week).
+
+#### Phone numbers
+
+Users may not always type in a full phone number but maybe also the number without the area code and country code, or without the country code but with the area code. That's why it makes sense to generate three tokens.
+
+This uses the **keyword tokenizer** rather than the standard one and, as a result, doesn't split the input into tokens but creates a single token which contains the entire unaltered text of the field. That's why it is only suitable if there is a field in your data, such as `phone_number` which only contains that piece of information without any additional text.
+In order to then create the additional tokens for the phone number without the country and/or area codes, we use filters which will create those tokens out of the original token for the full phone number.
+
+### Capturing meaning with synonyms
+
+#### Creating our own synonym token filter
+
+By default, a query for "dress shoes" gets tokenized to "dress" and "shoe", so the results would show dresses and shoes and not just dress shoes. We can remedy this by supplying the token filter in our analysis chain with a list of *synonyms*.
+
+We can create an index with a token filter which lists shoe and dress_shoe as synonyms:
+
+```request
+PUT http://localhost:9200/synonyms
+```
+
+```json
+{
+    "settings": {
+        "number_of_shards": 1,
+        "analysis": {
+            "filter": {
+                "english_stop": {
+                    "type": "stop",
+                    "stopwords": "_english_"
+                },
+                "english_keywords": {
+                    "type": "keyword_marker",
+                    "keywords": [
+                        "example"
+                    ]
+                },
+                "english_stemmer": {
+                    "type": "stemmer",
+                    "language": "english"
+                },
+                "english_possessive_stemmer": {
+                    "type": "stemmer",
+                    "language": "possessive_english"
+                },
+                "retail_syn_filter": {
+                    "type": "synonym",
+                    "synonyms": [
+                        "dress shoe, dress shoes => dress_shoe, shoe"
+                    ]
+                }
+            },
+            "analyzer": {
+                "retail_analyzer": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "english_possessive_stemmer",
+                        "lowercase",
+                        "retail_syn_filter",
+                        "english_keywords",
+                        "english_stemmer"
+                    ]
+                }
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "desc": {
+                "type": "text",
+                "analyzer": "retail_analyzer"
+            }
+        }
+    }
+}
+```
+
+We then create three documents with these values in the `desc` field:
+
+- "bob's brand dress shoes are the bomb"
+- "this little black dress is sure to impress"
+- "tennis shoes... you know, for tennis"
+
+However, when we query for *dress shoes* we also get the document on shoes:
+
+```request
+GET http://localhost:9200/synonyms
+```
+
+```json
+{
+  "query": {
+    "match": {
+        "desc": "dress shoe"
+    }
+  }
+}
+```
+
+Resulting document descriptions: 
+
+```text
+["bob's brand dress shoes are the bomb", 'tennis shoes... you know, for tennis']
+```
+
+#### Asymmetric analysis
+
+The reason is that the same analyzer is used for the query as for creating the index. So for the query "dress shoe", we produce the tokens `"dress_shoe"` and `"shoe"` and we also get the tennis shoe document in the response.
+
+To remedy this, we can define an **index-time filter** which produces the tokens `"dress_shoe"` and `"shoe"` for "dress shoe", and a separate **query-time filter** which only produces the token `"dress_shoe"` for "dress shoe". This way, we can also find dress shoes when searching for "shoe" but we will not return any other shoe documents when searching for "dress shoe".
+
+When query-time analysis differs from index-time analysis, this is called **asymmetric analysis**.
+
+```request
+PUT localhost:9200/synonyms
+```
+
+```json
+{
+    "settings": {
+        "number_of_shards": 1,
+        "analysis": {
+            "filter": {
+                "english_stop": {
+                    "type": "stop",
+                    "stopwords": "_english_"
+                },
+                "english_keywords": {
+                    "type": "keyword_marker",
+                    "keywords": [
+                        "example"
+                    ]
+                },
+                "english_stemmer": {
+                    "type": "stemmer",
+                    "language": "english"
+                },
+                "english_possessive_stemmer": {
+                    "type": "stemmer",
+                    "language": "possessive_english"
+                },
+                "retail_syn_filter_index": {
+                    "type": "synonym",
+                    "synonyms": [
+                        "dress shoe, dress shoes => dress_shoe, shoe"
+                    ]
+                },
+                "retail_syn_filter_search": {
+                    "type": "synonym",
+                    "synonyms": [
+                        "dress shoe, dress shoes => dress_shoe"
+                    ]
+                }
+            },
+            "analyzer": {
+                "retail_analyzer_index": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "english_possessive_stemmer",
+                        "lowercase",
+                        "retail_syn_filter_index",
+                        "english_stop",
+                        "english_keywords",
+                        "english_stemmer"
+                    ]
+                },
+                "retail_analyzer_search": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "english_possessive_stemmer",
+                        "lowercase",
+                        "retail_syn_filter_search",
+                        "english_stop",
+                        "english_keywords",
+                        "english_stemmer"
+                    ]
+                }
+            }
+        }
+    },
+    "mappings": {
+        "properties": {
+            "desc": {
+                "type": "text",
+                "analyzer": "retail_analyzer_index",
+                "search_analyzer": "retail_analyzer_search"
+            }
+        }
+    }
+}
+```
+
+Now we only get `dress shoe` results and no other shoe documents when searching for dress shoes:
+
+```text
+dress query result:  ['this little black dress is sure to impress']
+shoe query result:  ["bob's brand dress shoes are the bomb", 'tennis shoes... you know, for tennis']
+dress shoe query result:  ["bob's brand dress shoes are the bomb"]
+```
+
+### Modeling specificity in search
+
+With the help of *Asymmetric Analysis* we can have a search for `"animal"` return documents that contain the words "dog", "poodle", or "cat" and do not contain the word "animal" itself. This can be achieved in multiple ways which will be explained in the following sections.
+
+#### With synonyms
+
+The example in the previous section already used asymmetric analysis so that we would also return dress shoes for a search for shoes. Let's try with another example, this time using fruit. 
+
+In case we search for "apple", we also want Fuji, Gala, and McIntosh apples to be returned, but not the other way around. We want all fruit to be returned when searching for "fruit", but not all fruit to be returned when searching for "banana", for instance. 
+
+We can use the following synonym entries:
+
+```txt
+apple => apple, fruit
+fuji => fuji, apple, fruit
+mcintosh => mcintosh, apple, fruit
+gala => gala, apple, fruit
+banana => banana, fruit
+orange => orange, fruit
+```
+
+##### Semantic expansion
+
+The `=>` operator in the synonyms file signifies that we are mapping to terms of equal or greater generality. This is called **semantic expansion**.
+
+We can use the same strategy as before: If we only apply synonyms at index-time but not during query-time, documents will match more general queries, but when we query for a specific term such as `mcintosh`, we will not find all `fruit` or `apple` documents.
+
+It would also be possible to do the opposite and only apply synonyms at query time. This would then have the inverse effect so that the resulting documents would *generalize* upon the query: When searching for "Fuji", we would also get `fruit` and `apple` documents.
+
+##### Caveats
+
+When modeling semantic specificity with synonyms, we need to watch out for these pitfalls:
+
+- precision may be compromised: 
+  - When the user searches for "Fuji" they may not want to get documents about the Fuji apple
+  - The user may be looking for results at the same level of specificity as their query, e.g. when searching for "apples", the user may not really be interested in search results about fuji apples.
+
+#### With paths
