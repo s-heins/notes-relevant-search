@@ -61,6 +61,16 @@
     - [Feature modeling](#feature-modeling)
     - [Tokens, more than just words](#tokens-more-than-just-words)
   - [Controlling precision and recall](#controlling-precision-and-recall)
+    - [Precision and recall with different analyzers](#precision-and-recall-with-different-analyzers)
+    - [High precision with the standard analyzer](#high-precision-with-the-standard-analyzer)
+      - [Creating a clone of the standard analyzer](#creating-a-clone-of-the-standard-analyzer)
+      - [Looking at the resulting tokens for different queries](#looking-at-the-resulting-tokens-for-different-queries)
+    - [Using stemming with the English analyzer to improve recall at the expense of precision](#using-stemming-with-the-english-analyzer-to-improve-recall-at-the-expense-of-precision)
+    - [Too little precision but high recall with the phonetic analyzer](#too-little-precision-but-high-recall-with-the-phonetic-analyzer)
+  - [Precision and recall – have your cake and eat it too](#precision-and-recall-have-your-cake-and-eat-it-too)
+    - [Scoring strength of a feature in a single field](#scoring-strength-of-a-feature-in-a-single-field)
+    - [Scoring beyond $TF \\times IDF$: multiple search terms and multiple fields](#scoring-beyond-tf-times-idf-multiple-search-terms-and-multiple-fields)
+  - [Analysis strategies](#analysis-strategies)
 
 # Chapter 1: What is a relevant search result
 
@@ -1279,3 +1289,301 @@ They also don't have to correspond to words, they could also be geographic locat
 ![img](img/ch4/precision-and-recall-2.png)  
 
 Usually, we have to sacrifice either of these to improve the other: To improve precision, we're going to have to sacrifice recall. Otherwise, we have to include more features, f.ex. looking for sweet fruits in this example. Then, the tomato would be excluded.
+
+### Precision and recall with different analyzers
+
+The standard analyzer typically produces search results with high precision. However, recall may be poor because a user's query must match the words in the document *exactly*. You can see this in the following example, where "loving" doesn't match with "love".
+
+### High precision with the standard analyzer
+
+Here, we are creating a new index `my-index` with a token filter which will turn all token into lowercase and another which removes all stop words such as "and" or "to". You can also replace Elasticsearch's default stop word list with your own.
+
+#### Creating a clone of the standard analyzer
+
+```request
+PUT http://localhost:9200/my-index
+```
+
+```json
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "standard_clone": {
+          "type": "custom", 
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "stop"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+#### Looking at the resulting tokens for different queries
+
+These are the tokens that are produced when we're using our new standard analyzer clone for the movie title "Dr. Strangelove: Or How I Learned to Stop Worrying and Love the Bomb".
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "standard_clone",
+    "text": "Dr. Strangelove: Or How I Learned to Stop Worrying and Love the Bomb"
+}
+```
+
+Tokens from response parsed with Python (see Jupyter notebook)
+
+```txt
+['dr', 'strangelove', 'how', 'i', 'learned', 'stop', 'worrying', 'love', 'bomb']
+```
+
+If a confused user queries for a similar title which uses different grammatical forms, we can see that there is little overlap in the tokens:
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "standard_clone",
+    "text": "Mr. Weirdlove: Don't worry, I'm learning to start loving bombs"
+}
+```
+
+Tokens from response parsed with Python (see Jupyter notebook)
+
+```txt
+['mr', 'weirdlove', "don't", 'worry', "i'm", 'learning', 'start', 'loving', 'bombs']
+```
+
+Since not a single token matches between the query and the movie title, the search engine will not return what the user was looking for.
+
+### Using stemming with the English analyzer to improve recall at the expense of precision
+
+Note: I didn't try creating this analyzer since dockerized ES returned an "access denied" exception for the `tmp/keywords.txt` file. 
+
+```request
+PUT http://localhost:9200/my-index-2
+```
+
+```json
+{
+    "settings": {
+        "analysis": {
+            "filter": {
+                "english_stop": {
+                    "type": "stop",
+                    "stopwords": "_english_"
+                },
+                "english_keywords": {
+                    "type": "keyword_marker",
+                    "keywords_path": "/tmp/keywords.txt"
+                },
+                "english_stemmer": {
+                    "type": "stemmer",
+                    "language": "english"
+                },
+                "english_possessive_stemmer": {
+                    "type": "stemmer",
+                    "language": "possessive_english"
+                }
+            },
+            "analyzer": {
+                "english_clone": {
+                    "tokenizer": "standard",
+                    "filter": [
+                        "english_possessive_stemmer",
+                        "lowercase",
+                        "english_stop",
+                        "english_keywords",
+                        "english_stemmer"
+                    ]
+                }
+            }
+        }
+    }
+}
+```
+
+The included stemmer uses a heuristic to map English words to tokens. That is why it is not necessary for the search terms to really exist in a dictionary:
+
+```request
+GET http://localhost:9200/my-index/_analyze
+```
+
+```json
+{
+    "analyzer": "english",
+    "text": "silly silliness sillied sillying"
+}
+```
+
+This produces the token `"silli"` for all four input words.
+
+> Stemming is a technique of *feature modeling* that sacrifices precision for increased recall.
+
+If you do not want a word stemmed, you can add it to the **keywords file**. This way, for example, we can enter `"Maine"` in the keywords file and have it not be stemmed to `"main"`.
+
+Let us compare what tokens the English analyzer produces for the original two queries:
+
+```text
+['dr', 'strangelov', 'how', 'i', 'learn', 'stop', 'worri', 'love', 'bomb']
+```
+
+```text
+['mr', 'weirdlov', "don't", 'worri', "i'm", 'learn', 'start', 'love', 'bomb']
+```
+
+The English analyzer has sacrificed some precision for better recall. We now have four matching tokens: `learn`, `worri`, `love`, `bomb`.
+
+### Too little precision but high recall with the phonetic analyzer
+
+First run bash from our "elasticsearch" container:
+
+```shell
+$ docker exec -it elasticsearch /bin/bash
+```
+
+Inside the container, we can install the `analysis-phonetic` plugin like this:
+
+```shell
+$ bin/elasticsearch-plugin install analysis-phonetic
+```
+
+However, "message from Dalai Lama" and "massage from tall llama" produce the same tokens here:
+
+```text
+'MSJ', 'MSK', 'FRM', 'TL', 'LM'
+```
+
+As such, this is an example of too high recall and too little precision. We should instead try to represent the *meaning* of our words rather than just words themselves.
+
+## Precision and recall – have your cake and eat it too
+
+### Scoring strength of a feature in a single field
+
+Because users only care about the top results, we can use ranking to have the most precise results at the top and still features less relevant results further down the page – so basically, the best of both worlds.
+
+Let's look at an example with these four documents:
+
+```json
+{"title": "apple apple apple apple apple"}
+{"title": "apple apple apple banana banana"}
+{"title": "apple banana blueberry coconut"}
+{"title": "apple apples"}
+```
+
+For the code which creates the index, uploads the documents and prints out these scores, please have a look at the Jupyter notebook for chapter 4.
+
+Without specifying a default analyzer, the documents will be ranked like this:
+
+| Num | Score | Title                           |
+| :-- | :---- | :------------------------------ |
+| 1   | 0.18  | apple apple apple apple apple   |
+| 2   | 0.157 | apple apple apple banana banana |
+| 3   | 0.132 | apple apples                    |
+| 4   | 0.105 | apple banana blueberry coconut  |
+
+After re-creating the index with the English analyzer (and re-uploading the documents), the results look like this:
+
+```request
+PUT http://localhost:9200/my-index-2
+```
+
+```json
+{
+  "settings": {
+    "number_of_shards": 1,
+    "analysis": {
+      "analyzer": {
+          "default": {
+              "type": "english"
+          },
+          "default_search": {
+              "type": "english"
+          }
+      }
+    }
+  }
+}
+```
+
+| Num | Score | Title                           |
+| :-- | :---- | :------------------------------ |
+| 1   | 0.18  | apple apple apple apple apple   |
+| 2   | 0.169 | apple apples                    |
+| 3   | 0.157 | apple apple apple banana banana |
+| 4   | 0.105 | apple banana blueberry coconut  |
+
+This is because the frequency (`freq` in the output below) for "apple" in the document with title "apple apples" is now 2 thanks to the stemming in the English analyzer.
+
+The parsed explain (see Jupyter notebook) for the first two results look like this:
+
+```text
+1
+title: apple apple apple apple apple
+└──0.18038377 (weight(title:appl in 0) [PerFieldSimilarity], result of:)
+   └──0.18038377 (score(freq=5.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──0.105360515 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+         └──4 (n, number of documents containing term)
+         └──4 (N, total number of documents with field)
+      └──0.7782101 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+         └──5.0 (freq, occurrences of term within document)
+         └──1.2 (k1, term saturation parameter)
+         └──0.75 (b, length normalization parameter)
+         └──5.0 (dl, length of field)
+         └──4.0 (avgdl, average length of field)
+
+2
+title: apple apples
+└──0.16857684 (weight(title:appl in 3) [PerFieldSimilarity], result of:)
+   └──0.16857684 (score(freq=2.0), computed as boost * idf * tf from:)
+      └──2.2 (boost)
+      └──0.105360515 (idf, computed as log(1 + (N - n + 0.5) / (n + 0.5)) from:)
+         └──4 (n, number of documents containing term)
+         └──4 (N, total number of documents with field)
+      └──0.72727275 (tf, computed as freq / (freq + k1 * (1 - b + b * dl / avgdl)) from:)
+         └──2.0 (freq, occurrences of term within document)
+         └──1.2 (k1, term saturation parameter)
+         └──0.75 (b, length normalization parameter)
+         └──2.0 (dl, length of field)
+         └──4.0 (avgdl, average length of field)
+```
+
+As a result, we were able to achieve a good tradeoff between recall and precision. A lot of documents are returned and the most relevant ones are sorted to appear first. 
+With analysis, we can improve recall *and* $TF \times IDF$ relevance scoring:
+
+- The documents show up if at least one of the tokens that were generated for them is contained in the tokens generated for the query; This can be controlled with analysis.
+- The ranking for the documents then depends on $TF$ and $IDF$ but as we saw, this can also depend on what tokens are generated. Through stemming for example, two different words in the document can be mapped to one token (as we have seen for `apples` and `apple` being mapped to the token `appl`) and this will increase $TF$, and with it, its relevance score.
+
+### Scoring beyond $TF \times IDF$: multiple search terms and multiple fields
+
+Most searches do not include only one token like the previous example. With the help of the **coordinating factor** `coord` we can increase scores of documents which mention more of the search terms.
+
+For the documents from the previous example, if we were to search for `apple banana`, `coord` punishes documents which only match with `apple` by multiplying their relevance score by 50% since only one out of two terms matches. 
+
+The coordinating factor is **not used in BM25 though**, apparently, as it does not show up in the explains below.
+The IDF calculations for the below documents are all the same, at `0.1054` for apple and `0.6931` for banana.
+The document with `apple apple apple banana banana` has a weight of `0.1571` for `appl` and `0.8904` for `banana` because it has a length of field of 5 and has 3 occurrences for `appl` and 2 for `banana`. All the other factors are the same as for the other documents for the respective terms. Banana is scored higher than apple because its $IDF$ is higher; it is the rarer term.
+
+For the detailed explain statements, please see the Jupyter notebook.
+
+| Num | Score | Title                           |
+| :-- | :---- | :------------------------------ |
+| 1   | 1.048 | apple apple apple banana banana |
+| 2   | 0.799 | apple banana blueberry coconut  |
+| 3   | 0.18  | apple apple apple apple apple   |
+| 4   | 0.169 | apple apples                    |
+
+When searching over multiple fields, we can define different analyzers for each field, and thus sidestep the precision/recall trade-off in another way.
+It is also possible to use multiple analyzers such as the standard analyzer, the English stemmer, and the phonetic analyzer simultaneously by running all of them on the same text and saving the results in different fields.
+
+## Analysis strategies
