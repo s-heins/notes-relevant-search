@@ -10,6 +10,7 @@
    ```
 2. use python3 env
    ```
+   cd Jupyter
    poetry env use python3
    ```
 3. install dependencies
