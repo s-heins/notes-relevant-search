@@ -1715,6 +1715,8 @@ The reason is that the same analyzer is used for the query as for creating the i
 
 To remedy this, we can define an **index-time filter** which produces the tokens `"dress_shoe"` and `"shoe"` for "dress shoe", and a separate **query-time filter** which only produces the token `"dress_shoe"` for "dress shoe". This way, we can also find dress shoes when searching for "shoe" but we will not return any other shoe documents when searching for "dress shoe".
 
+In the query below, the index-time filter is called `retail_syn_filter_index` and the query-time filter is called `retail_syn_filter_search`. Each is used by its own analyzer, `retail_analyzer_index` and `retail_analyzer_search` which are set as `analyzer` and `search_analyzer` for the `desc` field in the `mappings` of the index definition. 
+
 When query-time analysis differs from index-time analysis, this is called **asymmetric analysis**.
 
 ```request
@@ -1800,8 +1802,8 @@ Now we only get `dress shoe` results and no other shoe documents when searching 
 
 ```text
 dress query result:  ['this little black dress is sure to impress']
-shoe query result:  ["bob's brand dress shoes are the bomb", 'tennis shoes... you know, for tennis']
-dress shoe query result:  ["bob's brand dress shoes are the bomb"]
+shoe query result:  ['bob's brand dress shoes are the bomb', 'tennis shoes... you know, for tennis']
+dress shoe query result:  ['bob's brand dress shoes are the bomb']
 ```
 
 ### Modeling specificity in search
@@ -1842,3 +1844,36 @@ When modeling semantic specificity with synonyms, we need to watch out for these
   - The user may be looking for results at the same level of specificity as their query, e.g. when searching for "apples", the user may not really be interested in search results about fuji apples.
 
 #### With paths
+
+This is useful if our document has path information and we want to include all documents in any subfolder. For example, if we're searching for a document in `/fruit/apples`, the search should include `/fruit/apples/mcintosh` and `/fruit/apples/braeburn`.
+
+For this, we can define an analyzer that uses the [pre-defined `path_hierarchy` tokenizer](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-pathhierarchy-tokenizer.html).
+For the input text `/fruit/apples/braeburn`, the path hierarchy tokenizer will produce the tokens `/fruit`, `/fruit/apples`, and `/fruit/apples/braeburn`:
+
+```
+POST {{INDEX}}
+
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "path_hierarchy":{
+            "tokenizer": "path_hierarchy"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "item": {
+      "properties": {
+        {{FIELD_WITH_PATH}}: {
+          "type": "string",
+          "analyzer": "path_hierarchy"
+        }
+      }
+    }
+  }
+}
+
+When we query for `/fruit/apples` in our path field, we will now get all results which have this path or are in a subfolder.
+
