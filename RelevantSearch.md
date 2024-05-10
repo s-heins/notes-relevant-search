@@ -82,6 +82,8 @@
         - [Semantic expansion](#semantic-expansion)
         - [Caveats](#caveats)
       - [With paths](#with-paths)
+      - [Tokenizing integers](#tokenizing-integers)
+      - [Tokenizing other data](#tokenizing-other-data)
 
 # Chapter 1: What is a relevant search result
 
@@ -309,12 +311,12 @@ Search engines are dumb – Terms are matched letter by letter, byte for byte:
 ##### Components of analysis
 
 1. Character filtering
-  *changes characters*
+    *changes characters*
 2. Tokenization
-  *turns search term into tokens*
+    *turns search term into tokens*
 3. Token filtering
-  *changes or removes tokens*
-  
+    *changes or removes tokens*
+
 ![img](img/components-of-analysis.png)  
 
 It is possible to store metadata that is generated during analysis with each token, such as *term positions* or *term offsets* which can be used for phrase queries or highlighting, or also add arbitrary metadata in so-called *payloads*. However, these consume a lot of storage and should be avoided if possible.
@@ -1810,6 +1812,13 @@ dress shoe query result:  ['bob's brand dress shoes are the bomb']
 
 With the help of *Asymmetric Analysis* we can have a search for `"animal"` return documents that contain the words "dog", "poodle", or "cat" and do not contain the word "animal" itself. This can be achieved in multiple ways which will be explained in the following sections.
 
+In general, it can be said that:
+
+* <mark>If the tokens produced at index-time are equal or more general than the document, queries match documents of equal or greater specificity</mark>: If we produce `fruit`, `apple`, and `fuji` for the `fuji` document, it will match for the `fruit` query as well even though that is more general than the document. \
+Another way to word it: 
+If the tokens in the index are more general than the tokens produced at query time, search will retrieve items that are more specific than the search term. (Example: Query for `apple`, documents in the index have tokens: `fruit apple fuji` and `fruit apple gala` -> documents for Fuji and Gala will be returned even though the query was for apples in general.)
+* <mark>If the tokens in the index are more specific than the tokens produced at query time, search will retrieve items that are more general than the search term.</mark> (Example: Query for `apple` results in tokens `apple` and `fruit`, four documents in the index with each just one token: `fuji`, `gala`, `apple`, `fruit` -> `apple` and `fruit` documents will be returned.)
+
 #### With synonyms
 
 The example in the previous section already used asymmetric analysis so that we would also return dress shoes for a search for shoes. Let's try with another example, this time using fruit. 
@@ -1829,7 +1838,7 @@ orange => orange, fruit
 
 ##### Semantic expansion
 
-The `=>` operator in the synonyms file signifies that we are mapping to terms of equal or greater generality. This is called **semantic expansion**.
+<mark>The `=>` operator in the synonyms file signifies that we are mapping to terms of equal or greater generality. This is called **semantic expansion**.</mark>
 
 We can use the same strategy as before: If we only apply synonyms at index-time but not during query-time, documents will match more general queries, but when we query for a specific term such as `mcintosh`, we will not find all `fruit` or `apple` documents.
 
@@ -1842,6 +1851,11 @@ When modeling semantic specificity with synonyms, we need to watch out for these
 - precision may be compromised: 
   - When the user searches for "Fuji" they may not want to get documents about the Fuji apple
   - The user may be looking for results at the same level of specificity as their query, e.g. when searching for "apples", the user may not really be interested in search results about fuji apples.
+- TF x IDF: General terms are penalized
+  - More general terms are replicated over and over, hence their document frequency will be artificially inflated
+  - As a result, matches on general terms will be penalized compared to rarer (i.e. more specific) terms
+  - Possible counter-measure: Turning off norms and term frequencies and using a constant score query which scores matches independent of term frequency or document frequency.
+- Index size also increases since terms are duplicated
 
 #### With paths
 
@@ -1850,7 +1864,7 @@ This is useful if our document has path information and we want to include all d
 For this, we can define an analyzer that uses the [pre-defined `path_hierarchy` tokenizer](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-pathhierarchy-tokenizer.html).
 For the input text `/fruit/apples/braeburn`, the path hierarchy tokenizer will produce the tokens `/fruit`, `/fruit/apples`, and `/fruit/apples/braeburn`:
 
-```
+```json
 POST {{INDEX}}
 
 {
@@ -1874,6 +1888,30 @@ POST {{INDEX}}
     }
   }
 }
+```
 
 When we query for `/fruit/apples` in our path field, we will now get all results which have this path or are in a subfolder.
+
+#### Tokenizing integers
+
+Search engines tokenize integers by creating that integer as a token, as well as tokens for all lower-precision versions of that same number. So `1941` would produce the tokens `1941`, `194`, `19`, and `1`.
+
+The reason is that we want to be able to find documents when we're doing a range query such as for all interesting events between 1776 and 2010.
+
+- if the tokenizer did not also produce tokens for the lower-precision versions, we would need to do one long should clause for every year between 1776 and 2010
+- this way, we can filter for `1776` or `1777` or `1778` or `1779` or `18` (which would cover the entire 19th century) or `19` or `200` (which would cover 2001-2009) or `2010`.
+- this is another example for **asymmetric tokenization*- – and actually also what we used for encoding **specificity in search**!
+  - At index time, the tokens produced are the integer and more general versions of it.
+  - At query time, the token produced is just the full integer.
+
+#### Tokenizing other data
+
+We can also tokenize geographic data using Z-encoding:
+
+- We need a flat, rectangular map
+- The map is divided into quadrants A, B, C, D, and each of those into further subquadrants A, B, C, D, until we reach the required specificity
+- Each point is encoded using the letters that make up its location, along with the more general versions of this location. I.e. `CDAAC` would be encoded as `CDAAC`, `CDAA`, `CDA`, `CD`, and `C`
+- We again encode specificity into the data by asymmetric tokenization
+
+We can also tokenize melodies where we denote the first note as `*` and then denote whether a subsequent note is higher, lower, or same in pitch as the previous note. This is called *Parsons Code for Melodic Contours*.
 
